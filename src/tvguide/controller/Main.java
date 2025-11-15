@@ -1,4 +1,3 @@
-
 package tvguide.controller;
 
 import tvguide.api.ChannelApi;
@@ -7,7 +6,6 @@ import tvguide.api.ProgramApi;
 import tvguide.model.Channel;
 import tvguide.model.Genre;
 import tvguide.model.ProgramItem;
-import tvguide.repository.Storage;
 import tvguide.service.Service;
 
 import java.nio.file.Path;
@@ -15,29 +13,44 @@ import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.util.*;
 
+import tvguide.db.Db;
+import tvguide.db.Migrations;
+import tvguide.repository.SqlRepository;
+
 public class Main {
     public static void main(String[] args) {
-        Storage storage = new Storage(Path.of("data"));
-        Service service = new Service(storage);
+        try {
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\nСохранение состояния перед выходом...");
-        }));
+            Db db = new Db(Path.of("data"));
+            try (var conn = db.getConnection()) {
+                Migrations.ensureSchema(conn);
+            }
 
-        runConsole(service, service, service);
+            SqlRepository repo = new SqlRepository(db);
+            Service service = new Service(repo);
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() ->
+                    System.out.println("\nВыход из приложения...")
+            ));
+
+            runConsole(service, service, service);
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("Ошибка инициализации БД: " + e.getMessage());
+        }
     }
 
     private static void runConsole(ChannelApi channelApi, GenreApi genreApi, ProgramApi programApi) {
         Scanner sc = new Scanner(System.in);
         while (true) {
             System.out.println("""
-
-Планировщик на неделю
-1) Каналы
-2) Жанры
-3) Передачи
-0) Выход
-Выберите пункт: """);
+                    
+                    Планировщик на неделю
+                    1) Каналы
+                    2) Жанры
+                    3) Передачи
+                    0) Выход
+                    Выберите пункт: """);
             String s = sc.nextLine().trim();
             try {
                 switch (s) {
@@ -56,13 +69,13 @@ public class Main {
     private static void channelsMenu(Scanner sc, ChannelApi api) {
         while (true) {
             System.out.println("""
--- Каналы --
-1) Список
-2) Добавить
-3) Переименовать
-4) Удалить
-0) Назад
-Выберите пункт: """);
+                    -- Каналы --
+                    1) Список
+                    2) Добавить
+                    3) Переименовать
+                    4) Удалить
+                    0) Назад
+                    Выберите пункт: """);
             String s = sc.nextLine().trim();
             try {
                 switch (s) {
@@ -101,13 +114,13 @@ public class Main {
     private static void genresMenu(Scanner sc, GenreApi api) {
         while (true) {
             System.out.println("""
--- Жанры --
-1) Список
-2) Добавить
-3) Переименовать
-4) Удалить
-0) Назад
-Выберите пункт: """);
+                    -- Жанры --
+                    1) Список
+                    2) Добавить
+                    3) Переименовать
+                    4) Удалить
+                    0) Назад
+                    Выберите пункт: """);
             String s = sc.nextLine().trim();
             try {
                 switch (s) {
@@ -146,14 +159,14 @@ public class Main {
     private static void programsMenu(Scanner sc, ChannelApi channelApi, GenreApi genreApi, ProgramApi api) {
         while (true) {
             System.out.println("""
--- Передачи (программа) --
-1) Список всех
-2) Список по дню
-3) Добавить
-4) Редактировать
-5) Удалить
-0) Назад
-Выберите пункт: """);
+                    -- Передачи (программа) --
+                    1) Список всех
+                    2) Список по дню
+                    3) Добавить
+                    4) Редактировать
+                    5) Удалить
+                    0) Назад
+                    Выберите пункт: """);
             String s = sc.nextLine().trim();
             try {
                 switch (s) {

@@ -3,8 +3,10 @@ package tvguide.service;
 import tvguide.api.ChannelApi;
 import tvguide.api.GenreApi;
 import tvguide.api.ProgramApi;
-import tvguide.model.*;
-import tvguide.repository.Storage;
+import tvguide.model.Channel;
+import tvguide.model.Genre;
+import tvguide.model.ProgramItem;
+import tvguide.repository.SqlRepository;
 
 import java.time.DayOfWeek;
 import java.time.LocalTime;
@@ -12,167 +14,201 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class Service implements ChannelApi, GenreApi, ProgramApi {
-    private final Storage storage;
-    private AppState state;
+    private final SqlRepository repo;
 
-    public Service(Storage storage) {
-        this.storage = storage;
-        this.state = storage.loadOrCreate();
+    public Service(SqlRepository repo) {
+        this.repo = repo;
     }
 
-    private long nextId() { return state.nextId++; }
-
-    private void persist() { storage.save(state); }
-
-    // ChannelApi
-    @Override
-    public synchronized Channel addChannel(String name) {
-        Objects.requireNonNull(name);
-        ensureUniqueChannel(name);
-        Channel c = new Channel(nextId(), name.trim());
-        state.channels.put(c.getId(), c);
-        persist();
-        return c;
-    }
-
-    @Override
-    public synchronized void deleteChannel(long id) {
-        // prevent deletion if used by a program
-        boolean used = state.programs.values().stream().anyMatch(p -> p.getChannelId() == id);
-        if (used) throw new IllegalStateException("Канал используется в программах, удалите соответствующие передачи.");
-        state.channels.remove(id);
-        persist();
-    }
-
-    @Override
-    public synchronized Channel updateChannel(long id, String newName) {
-        Channel c = requireChannel(id);
-        if (newName != null && !newName.isBlank()) {
-            ensureUniqueChannel(newName);
-            c.setName(newName.trim());
-        }
-        persist();
-        return c;
-    }
-
-    @Override
-    public synchronized List<Channel> listChannels() {
-        return state.channels.values().stream()
-                .sorted(Comparator.comparing(Channel::getName))
-                .collect(Collectors.toList());
-    }
-
-    private void ensureUniqueChannel(String name) {
-        String n = name.trim().toLowerCase(Locale.ROOT);
-        boolean exists = state.channels.values().stream()
-                .anyMatch(c -> c.getName().trim().toLowerCase(Locale.ROOT).equals(n));
-        if (exists) throw new IllegalArgumentException("Канал с таким именем уже существует: " + name);
-    }
-    private Channel requireChannel(long id) {
-        Channel c = state.channels.get(id);
+    // проверки на уникальность и существование
+    private Channel requireChannel(long id) throws Exception {
+        Channel c = repo.getChannel(id);
         if (c == null) throw new NoSuchElementException("Канал не найден, id=" + id);
         return c;
     }
-
-    // GenreApi
-    @Override
-    public synchronized Genre addGenre(String name) {
-        Objects.requireNonNull(name);
-        ensureUniqueGenre(name);
-        Genre g = new Genre(nextId(), name.trim());
-        state.genres.put(g.getId(), g);
-        persist();
-        return g;
-    }
-
-    @Override
-    public synchronized void deleteGenre(long id) {
-        boolean used = state.programs.values().stream().anyMatch(p -> p.getGenreId() == id);
-        if (used) throw new IllegalStateException("Жанр используется в программах, удалите соответствующие передачи.");
-        state.genres.remove(id);
-        persist();
-    }
-
-    @Override
-    public synchronized Genre updateGenre(long id, String newName) {
-        Genre g = requireGenre(id);
-        if (newName != null && !newName.isBlank()) {
-            ensureUniqueGenre(newName);
-            g.setName(newName.trim());
-        }
-        persist();
-        return g;
-    }
-
-    @Override
-    public synchronized List<Genre> listGenres() {
-        return state.genres.values().stream()
-                .sorted(Comparator.comparing(Genre::getName))
-                .collect(Collectors.toList());
-    }
-
-    private void ensureUniqueGenre(String name) {
-        String n = name.trim().toLowerCase(Locale.ROOT);
-        boolean exists = state.genres.values().stream()
-                .anyMatch(g -> g.getName().trim().toLowerCase(Locale.ROOT).equals(n));
-        if (exists) throw new IllegalArgumentException("Жанр с таким именем уже существует: " + name);
-    }
-    private Genre requireGenre(long id) {
-        Genre g = state.genres.get(id);
+    private Genre requireGenre(long id) throws Exception {
+        Genre g = repo.getGenre(id);
         if (g == null) throw new NoSuchElementException("Жанр не найден, id=" + id);
         return g;
     }
-
-
-    @Override
-    public synchronized ProgramItem addProgram(String title, long channelId, long genreId, DayOfWeek day, LocalTime start) {
-        Objects.requireNonNull(title);
-        requireChannel(channelId);
-        requireGenre(genreId);
-        Objects.requireNonNull(day);
-        Objects.requireNonNull(start);
-        ProgramItem p = new ProgramItem(nextId(), title.trim(), channelId, genreId, day, start);
-        state.programs.put(p.getId(), p);
-        persist();
-        return p;
-    }
-
-    @Override
-    public synchronized ProgramItem updateProgram(long id, String title, Long channelId, Long genreId, DayOfWeek day, LocalTime start) {
-        ProgramItem p = requireProgram(id);
-        if (title != null && !title.isBlank()) p.setTitle(title.trim());
-        if (channelId != null) { requireChannel(channelId); p.setChannelId(channelId); }
-        if (genreId != null)   { requireGenre(genreId);   p.setGenreId(genreId); }
-        if (day != null)       p.setDay(day);
-        if (start != null)     p.setStartTime(start);
-        persist();
-        return p;
-    }
-
-    @Override
-    public synchronized void deleteProgram(long id) {
-        state.programs.remove(id);
-        persist();
-    }
-
-    @Override
-    public synchronized List<ProgramItem> listAll() {
-        return state.programs.values().stream()
-                .sorted(Comparator.comparing(ProgramItem::getDay).thenComparing(ProgramItem::getStartTime))
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public synchronized List<ProgramItem> listByDay(DayOfWeek day) {
-        return state.programs.values().stream()
-                .filter(p -> p.getDay() == day)
-                .sorted(Comparator.comparing(ProgramItem::getStartTime))
-                .collect(Collectors.toList());
-    }
-
-    private ProgramItem requireProgram(long id) {
-        ProgramItem p = state.programs.get(id);
+    private ProgramItem requireProgram(long id) throws Exception {
+        ProgramItem p = repo.getProgram(id);
         if (p == null) throw new NoSuchElementException("Передача не найдена, id=" + id);
         return p;
+    }
+
+    private void ensureUniqueChannel(String name) throws Exception {
+        if (repo.channelExistsByName(name))
+            throw new IllegalArgumentException("Канал с таким именем уже существует: " + name);
+    }
+    private void ensureUniqueGenre(String name) throws Exception {
+        if (repo.genreExistsByName(name))
+            throw new IllegalArgumentException("Жанр с таким именем уже существует: " + name);
+    }
+
+
+    @Override
+    public Channel addChannel(String name) {
+        try {
+            Objects.requireNonNull(name);
+            ensureUniqueChannel(name);
+            return repo.insertChannel(name);
+        } catch (RuntimeException re) {
+            throw re;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void deleteChannel(long id) {
+        try {
+            if (repo.channelUsed(id))
+                throw new IllegalStateException("Канал используется в программах; удалите соответствующие передачи.");
+            repo.deleteChannel(id);
+        } catch (RuntimeException re) {
+            throw re;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public Channel updateChannel(long id, String newName) {
+        try {
+            requireChannel(id);
+            if (newName != null && !newName.isBlank()) {
+                ensureUniqueChannel(newName);
+                repo.updateChannel(id, newName);
+            }
+            return repo.getChannel(id);
+        } catch (RuntimeException re) {
+            throw re;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public List<Channel> listChannels() {
+        try {
+            return repo.listChannels();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    @Override
+    public Genre addGenre(String name) {
+        try {
+            Objects.requireNonNull(name);
+            ensureUniqueGenre(name);
+            return repo.insertGenre(name);
+        } catch (RuntimeException re) {
+            throw re;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void deleteGenre(long id) {
+        try {
+            if (repo.genreUsed(id))
+                throw new IllegalStateException("Жанр используется в программах; удалите соответствующие передачи.");
+            repo.deleteGenre(id);
+        } catch (RuntimeException re) {
+            throw re;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public Genre updateGenre(long id, String newName) {
+        try {
+            requireGenre(id);
+            if (newName != null && !newName.isBlank()) {
+                ensureUniqueGenre(newName);
+                repo.updateGenre(id, newName);
+            }
+            return repo.getGenre(id);
+        } catch (RuntimeException re) {
+            throw re;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public List<Genre> listGenres() {
+        try {
+            return repo.listGenres();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    @Override
+    public ProgramItem addProgram(String title, long channelId, long genreId, DayOfWeek day, LocalTime start) {
+        try {
+            Objects.requireNonNull(title);
+            requireChannel(channelId);
+            requireGenre(genreId);
+            Objects.requireNonNull(day);
+            Objects.requireNonNull(start);
+            return repo.insertProgram(title, channelId, genreId, day, start);
+        } catch (RuntimeException re) {
+            throw re;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public ProgramItem updateProgram(long id, String title, Long channelId, Long genreId, DayOfWeek day, LocalTime start) {
+        try {
+            ProgramItem p = requireProgram(id);
+            if (title != null && !title.isBlank()) p.setTitle(title.trim());
+            if (channelId != null) { requireChannel(channelId); p.setChannelId(channelId); }
+            if (genreId != null)   { requireGenre(genreId);   p.setGenreId(genreId); }
+            if (day != null)       p.setDay(day);
+            if (start != null)     p.setStartTime(start);
+            repo.updateProgram(p);
+            return repo.getProgram(id);
+        } catch (RuntimeException re) {
+            throw re;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void deleteProgram(long id) {
+        try {
+            repo.deleteProgram(id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public List<ProgramItem> listAll() {
+        try {
+            return repo.listAllPrograms();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public List<ProgramItem> listByDay(DayOfWeek day) {
+        try {
+            return repo.listProgramsByDay(day);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
