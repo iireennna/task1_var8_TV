@@ -12,9 +12,9 @@ public class Db {
     private final String password;
 
     public Db(Path dataDir) {
-        // дефолт на SQLite
+
         String defaultUrl = "jdbc:sqlite:" + dataDir.resolve("app.db");
-        String envUrl  = System.getenv("DB_URL");
+        String envUrl = System.getenv("DB_URL");
         String envUser = System.getenv("DB_USER");
         String envPass = System.getenv("DB_PASSWORD");
 
@@ -22,17 +22,22 @@ public class Db {
         this.user = envUser == null ? "" : envUser;
         this.password = envPass == null ? "" : envPass;
 
-        try { Files.createDirectories(dataDir); } catch (Exception ignored) {}
+        try {
+            Files.createDirectories(dataDir);
+        } catch (Exception ignored) {
+        }
     }
 
     public Connection getConnection() throws SQLException {
-        if (url.startsWith("jdbc:sqlite")) {
-            return DriverManager.getConnection(url);
-        }
-        // Внешняя БД (Postgres/MySQL и т.п.)
-        if (!user.isBlank() || !password.isBlank()) {
-            return DriverManager.getConnection(url, user, password);
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                    "SQLite JDBC driver не найден.",
+                    e
+            );
         }
         return DriverManager.getConnection(url);
     }
 }
+

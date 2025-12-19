@@ -20,7 +20,6 @@ public class Service implements ChannelApi, GenreApi, ProgramApi {
         this.repo = repo;
     }
 
-    // проверки на уникальность и существование
     private Channel requireChannel(long id) throws Exception {
         Channel c = repo.getChannel(id);
         if (c == null) throw new NoSuchElementException("Канал не найден, id=" + id);
